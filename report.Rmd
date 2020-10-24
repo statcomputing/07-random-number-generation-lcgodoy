@@ -435,12 +435,14 @@ results <- mymcmc(niter = 5000, init = init, x = x, width = .3, hyper = hyper, b
 ### Histograms
 
 ```{R hists}
-apply(results, 2, hist)
+for(i in seq_len(ncol(results)))
+    hist(results[, i], main = colnames(results)[i],
+         xlab = NULL, ylab = NULL)
 ```
 
 ### trace plots
 
-
 ```{R traces}
-apply(results, 2, ts.plot)
+for(i in seq_len(ncol(results)))
+    ts.plot(results[, i], main = colnames(results)[i], xlab = "iteration", ylab = NULL)
 ```
