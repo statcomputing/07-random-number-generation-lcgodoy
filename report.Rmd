@@ -1,0 +1,432 @@
+---
+title: "STAT 5361 - Homework #7"
+subtitle: "Random Number Generation"
+author: "Lucas Godoy"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    number_sections: false
+    includes:
+      in_header: "utils/preamble.tex"
+---
+
+```{R setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      eval = TRUE,
+                      message = FALSE,
+                      warning = FALSE,
+                      fig.align = "center", 
+                      fig.pos = "tb",
+                      fig.width = 4,
+                      fig.height = 3,
+                      dpi = 300,
+                      out.width = "90%")
+
+opts <- options(knitr.kable.NA = "", 
+                knitr.table.format = "latex",
+                kableExtra.latex.load_packages = FALSE,
+                digits = 4L)
+```
+
+```{R pkg-seed}
+suppressWarnings(library(ggplot2)) ## avoiding ggplot2 warnings
+
+set.seed(2020)
+```
+
+```{R auxilliary-functions}
+## Problem 5.3.1
+## kernel of g
+g_fun <- function(x, theta)
+(2*x^(theta - 1) + x^(theta - .5))*exp(-x)
+
+## kernel of f
+f_fun <- function(x, theta)
+    sqrt(4 + x)*x^(theta - 1)*exp(-x)
+
+## evaluating the density of g
+g_dens <- function(x, theta)
+    g_fun(x, theta)/(2*gamma(theta) + gamma(theta + .5))
+
+## evaluating the density of f
+f_dens <- function(x, theta) {
+    kern    <- f_fun(x, theta)
+    norm_ct <- cubature::cubintegrate(f = f_fun, lower = 0, upper = Inf,
+                                      method = "pcubature", theta = theta)$integral
+    return(kern/norm_ct)
+}
+
+## generating data from the density g
+r_g <- function(n, theta) {
+    out <- vector(mode = "numeric",
+                  length = n)
+    trials <- integer(length = 1L)
+    .alpha <- -optimize(f = function(x) {-g_dens(x, theta)/dgamma(x,
+                                                              shape = theta,
+                                                              scale = 1)},
+                        interval = c(0, 1000))$objective
+
+    for(i in seq_along(out)) {
+        while(TRUE) {
+            cand  <- rgamma(n = 1, shape = theta, scale = 1)
+            ratio <-
+                g_dens(x = cand, theta = theta) /
+                (.alpha*dgamma(x = cand, shape = theta, scale = 1))
+            u <- runif(1)
+            trials <- trials + 1L
+            if(u < ratio) break
+        }
+        out[i] <- cand
+    }
+    return(list(sim_var  = out,
+                acc_rate = n/trials))
+}
+
+## generating data form rf_rej using rejection sampling
+rf_rej <- function(n, theta) {
+    .beta <- -optimize(f = function(x, theta) -f_fun(x, theta)/g_fun(x, theta),
+                       theta = theta,
+                       interval = c(0, 100))$objective
+    trials <- integer(length = 1)
+    out <- vector(mode = "numeric",
+                  length = n)
+    for(i in seq_along(out)) {
+        while(TRUE) {
+            cand  <- r_g(n = 1, theta = theta)$sim_var
+            ratio <-
+                f_fun(x = cand,
+                      theta = theta) / (.beta*g_fun(x = cand,
+                                                    theta = theta))
+            u <- runif(1)
+            trials <- trials + 1L
+            if(u < ratio) break
+        }
+        out[i] <- cand
+    }
+    return(list(sim_var  = out,
+                acc_rate = n/trials))
+}
+
+## setting parameters
+N <- 10000
+theta <- 5
+
+## auxilliary function and variable
+.alpha <- -optimize(f = function(x, theta) {-g_dens(x, theta)/dgamma(x,
+                                                                     shape = theta,
+                                                                     scale = 1)},
+                    interval = c(0, 1000),
+                    theta = theta)$objective
+
+aux_fun <- function(x, shape, scale, w) w*dgamma(x = x, shape = shape, scale = scale)
+
+## generating data from g
+x_gmix <- r_g(n = N, theta = theta)
+
+## generating data from f
+x_f <- rf_rej(n = N, theta = theta)
+```
+
+## Problem 5.3.1
+
+We are interested in finding $C$ such that
+\[
+C \int_0^\infty (2x^{\theta - 1} + x^{\theta - 1/2}) e^{-x} \, dx = 1.
+\]
+From that, it follows immediately from the equation above that
+\[
+C = \left( \int_0^\infty (2x^{\theta - 1} + x^{\theta - 1/2}) e^{-x} \, dx
+\right)^{-1},
+\]
+where
+\begin{align*}
+\int_0^\infty (2x^{\theta - 1} + x^{\theta - 1/2}) e^{-x} \, dx & =
+\int_0^\infty 2x^{\theta - 1}e^{-x} \, dx + 
+\int_0^\infty x^{\theta - 1/2} e^{-x} \, dx 
+\\
+& = 
+2 \int_0^\infty x^{\theta - 1}e^{-x} \, dx + 
+\int_0^\infty x^{\theta + 1/2 - 1} e^{-x} \, dx \\
+& = 
+2 \Gamma(\theta) + \Gamma(\theta + 1/2) \\
+\therefore C & = \left(2 \Gamma(\theta) + \Gamma(\theta + 1/2) \right)^{-1}.
+\end{align*}  
+
+By looking at the function $g$, we can infer that the two gamma distributions
+that are part of the given mixture are, respectively,
+\[
+Gamma(\theta, 1) \quad \mbox{and} \quad Gamma(\theta + 1/2, 1),
+\]  
+
+Now, that we know the distributions that are part of mixture, we can estimate
+the weight of each one of them. We have,
+\begin{equation}
+\label{eq:finding_p}
+g(x) = p \times f_{\theta}(x) + (1 - p) \times f_{\theta + .5}(x),
+\end{equation}
+where $f_{\theta}(x)$ represents the density of a Gamma distribution evaluated
+with shape parameter $\theta$ and scale parameter 1 evaluated at the point $x$.
+Given that now we know how to evaluate every function in \eqref{eq:finding_p},
+$p$ can be easily isolated as follows
+\begin{equation}
+\label{eq:finding_p2}
+p = \frac{g(x) - f_{\theta + .5}(x)}{f_{\theta}(x) - f_{\theta + .5}(x)}.
+\end{equation}
+Now, from \eqref{eq:finding_p2}, for every $\theta$ we know the weights
+associated with the two components of the mixture $g(x)$. Additionally, for
+Gamma random variables, we know that $P(X \leq a) > P(Y \leq a)$ if $X$ and $Y$
+are gamma random variables with same scale parameter but $X$ having a smaller
+shape parameter than $Y$. Therefore, we can use $f_{\theta}$ as an instrumental
+density to construct a rejection sampling algorithm for $g(x)$. To do so, we
+need to find $\alpha$ such that
+\[
+\alpha = \sup_{x \geq 0} \frac{g(x)}{f_{\theta}(x)},
+\]
+this value will be found numerically for each given $\theta$. 
+
+The Figure \ref{fig:env-g} displays the density $g$ as the solid line and the
+proposed envelope as the dashed line.
+```{R env-g, fig.cap="Envelope for $g$."}
+ggplot() +
+    stat_function(fun  = aux_fun,
+                  args = list(w = .alpha, shape = theta,
+                              scale = 1),
+                  lty = 2, 
+                  xlim = c(0, 15)) +
+    stat_function(fun = g_dens,
+                  args = list(theta = theta), 
+                  xlim = c(0, 15)) +
+    theme_bw() +
+    labs(x = NULL,
+         y = NULL)
+```
+
+The algorithm to generate data from $g$ is as follows
+\begin{algorithm}[H]
+\KwInput{\\ sample size $n \in \mathbb{Z}$ \\ scale parameter $\theta \in \mathbb{R}$}
+\KwResult{A sample of size $n$ from the density $g_\theta$}
+ Make k = 0\;
+ \While{k < n}{
+  Generate a sample $u$ from $U \sim U(0, 1)$ \;
+  Generate a candidate $x$ from $f_\theta$ \;
+  \eIf{$u \leq \frac{g_{\theta}(x)}{\alpha f_{\theta}(x)}$}{
+   Take $y_k = x$ \;
+   }{
+   Come back to step 3 \;
+  } 
+  Make $k = k + 1$ \; 
+  }
+ \caption{Rejection sampling to generate data from $g_\theta$}
+\end{algorithm}  
+
+In the Figure \ref{fig:g-dens}, the black solid line shows the kernel density
+estimated from $n = 10,000$ data points simulated from the density $g$ with
+$\theta = 5$ using the proposed rejection sampling algorithm, while the shaded
+red area displays the actual density. The acceptance rate observed using the proposed 
+algorithm was `r scales::percent(x_gmix$acc_rate)`.
+```{R g-dens, fig.cap = "Comparing the kernel density from simulated data with the actual density."}
+ggplot(mapping = aes(x = x_gmix$sim_var)) +
+    stat_function(fun  = g_dens,
+                  args = list(theta = theta),
+                  geom = "area", fill = 2,
+                  lwd = 1.1, alpha = .5,
+                  inherit.aes = FALSE) +
+    stat_density(geom  = "line",
+                 color = 1,
+                 lwd   = 1.2) +
+    theme_bw() +
+    labs(x = "x",
+         y = "g(x)")
+```
+
+To generate data from $f$ and maximize the efficiency of our algorithm, we have
+to find the constant $\beta$ defined as follows
+\[
+\beta \geq \frac{q(x)}{h(x)},
+\]
+where $q(x)$ and $h(x)$ are the kernel of the densities $f$ and $g$,
+respectively. This constant will be found numerically for each $\theta$. The
+Figure \ref{fig:env-f} displays the function $q(x)$ as a solid black line, the
+function $h(x)$ as a solid red line, and $\beta \times h(x)$ as the dashed red
+line. Note that, as expected, finding $\beta$ will improve the algorithm
+acceptance rante and, consequentely, its efficiency.
+```{R env-f, fig.cap = "Proposed envelope for $f$."}
+## finding beta
+test <- function(x, theta) {-f_fun(x, theta)/g_fun(x, theta)}
+
+.beta <- -optimize(f = test, theta = theta,
+                  interval = c(0, 100))$objective
+
+g_fun2 <- function(x, theta, cte)
+    cte*g_fun(x, theta)
+
+ggplot() +
+    stat_function(fun  = g_fun,
+                  args = list(theta = theta),
+                  geom = "line", 
+                  lty  = 1,
+                  col  = 2,
+                  xlim = c(0, 15)) +
+    stat_function(fun  = g_fun2,
+                  args = list(theta = theta,
+                              cte   = .beta),
+                  geom = "line", 
+                  lty  = 2,
+                  col  = 2,
+                  xlim = c(0, 15)) +
+    stat_function(fun  = f_fun,
+                  args = list(theta = theta),
+                  geom = "line", 
+                  lty  = 1,
+                  col  = 1,
+                  xlim = c(0, 15)) +
+    theme_bw() +
+    labs(x = NULL,
+         y = NULL)
+
+```
+
+That being said, the rejection sampling algorithm to generate data from the
+density $f$ using $g$ as an instrumental desity is given below.
+\begin{algorithm}[H]
+\KwInput{\\ sample size $n \in \mathbb{Z}$ \\ scale parameter $\theta \in \mathbb{R}$}
+\KwResult{A sample of size $n$ from the density $f_\theta$}
+ Make k = 0\;
+ \While{k < n}{
+  Generate a sample $u$ from $U \sim U(0, 1)$ \;
+  Generate a candidate $x$ from $g_\theta$ \;
+  \eIf{$u \leq \frac{q(x)}{\beta h(x)}$}{
+   Take $y_k = x$ \;
+   }{
+   Come back to step 3 \;
+  } 
+  Make $k = k + 1$ \; 
+  }
+ \caption{Rejection sampling to generate data from $f_\theta$}
+\end{algorithm}  
+
+The graph in Figure \ref{fig:dens-f} displays the kernel density based on $n =
+10,000$ data points simulated from the rejection sampling algorithm described
+above. The $\theta$ parameter used was 5.
+```{R dens-f, fig.cap = "Comparing the kernel density from simulated data (from $f_{\theta}$ with the actual density."}
+ggplot(mapping = aes(x = x_f$sim_var)) +
+    stat_function(fun  = f_dens,
+                  args = list(theta = theta),
+                  geom = "area", fill = 2,
+                  lwd = 1.1, alpha = .5,
+                  inherit.aes = FALSE) +
+    stat_density(geom  = "line",
+                 color = 1,
+                 lwd   = 1.2) +
+    theme_bw() +
+    labs(x = "x",
+         y = "f(x)")
+```
+  
+## Problem 6.3.1
+
+Below is my code for the problem..
+I couldn't figure it out on time.
+
+```{R code, eval = FALSE, echo = TRUE}
+delta <- 0.7 # true value to be estimated based on the data
+n <- 100
+set.seed(123)
+u <- rbinom(n, prob = delta, size = 1)
+mu_1 <- 7
+mu_2 <- 10
+sigma_1 <- 1
+sigma_2 <- 1
+x <- rnorm(n, ifelse(u == 1, mu_1, mu_2), ifelse(u == 1, sigma_1, sigma_2))
+
+mylike <- function(theta, x) {
+    prod(theta["delta"] * dnorm(x, theta["mu_1"], sqrt(1/theta["tau_1"])) +
+         (1 - theta["delta"]) * dnorm(x, theta["mu_2"], sqrt(1/theta["tau_2"])))
+}
+
+delta_aux <- function(theta, x) {
+    theta["delta"] * dnorm(x, theta["mu_1"], sqrt(1/theta["tau_1"]))/(
+        theta["delta"] * dnorm(x, theta["mu_1"], sqrt(1/theta["tau_1"])) +
+    (1 - theta["delta"]) * dnorm(x, theta["mu_2"], sqrt(1/theta["tau_2"]))
+    )
+}
+
+## simple random walk chain
+myRange <- function(v, width) {
+    min(1, v + width) - max(0, v - width)
+}
+
+init <- c("delta" = .5, "mu_1" = 3, "mu_2" = 8, "tau_1" = 1, "tau_2" = 1)
+hyper <- c("a" = .5, "b" = 10, "v_mu" = 10^2)
+
+mymcmc <- function(niter, init, x, width,
+                   hyper, burn) {
+
+    out <- matrix(numeric(niter*length(init)),
+                  nrow = niter,
+                  ncol = length(init))
+    colnames(out) <- names(init)
+    out[1,] <- init
+    z <- matrix(numeric(niter*length(x)),
+                nrow = niter,
+                ncol = length(x))    
+    n <- length(x)
+    z[1,] <- rbinom(n = n, size = 1, prob = out[1, "delta"])
+    n_1 <- vector(mode = "numeric", length = niter)
+    n_2 <- vector(mode = "numeric", length = niter)
+    n_1[1] <- sum(z[1, ])
+    n_2[1] <- length(x) - n_1[1]    
+    
+    tau_mu1 <- 1/hyper["v_mu"]
+    tau_mu2 <- 1/hyper["v_mu"]
+    
+    out[1, "mu_1"] <- rnorm(1,
+                            mean = ((out[1, "tau_1"])/(n_1[1]*out[1, "tau_1"] + tau_mu1))*sum(x[which(z[1, ] == 1)]),
+                            sd = 1/sqrt(n_1[1]*out[1, "tau_1"] + tau_mu1))
+    out[1, "mu_2"] <- rnorm(1,
+                            mean = ((out[1, "tau_2"])/(n_2[1]*out[1, "tau_2"] + tau_mu2))*sum(x[which(z[1, ] == 0)]),
+                            sd = 1/sqrt(n_2[1]*out[1, "tau_2"] + tau_mu2))
+    out[1, "tau_1"] <- rgamma(1,
+                              shape = hyper["a"] + .5*n_1[1],
+                              scale = hyper["b"] + .5*sum((x[which(z[1, ] == 1)] - out[1, "mu_1"])^2))
+    out[1, "tau_2"] <- rgamma(1,
+                              shape = hyper["a"] + .5*n_2[1],
+                              scale = hyper["b"] + .5*sum((x[which(z[1, ] == 0)] - out[1, "mu_2"])^2))
+
+    for (i in 2:niter) {
+        cand <- out[i - 1, ]
+        cand["delta"] <- runif(1, max(0, init["delta"] - width),
+                               min(1, init["delta"] + width))
+        ratio <- mylike(cand, x) / myRange(cand["delta"], width) /
+            mylike(out[i - 1,], x) * myRange(out[i - 1, "delta"], width)
+        if(is.nan(ratio)) ratio <- 0
+        if (runif(1) < min(ratio, 1)) {
+            out[i, "delta"] <- cand["delta"]
+        } else out[i, "delta"] <- out[i - 1, "delta"]
+
+        p_i <- delta_aux(out[i - 1, ], x)
+
+        z[i, ] <- sapply(p_i,
+                         function(p)
+                             rbinom(n = 1, size = 1,
+                                    prob = p))
+        out[i, "mu_1"] <- rnorm(1,
+                                mean = ((out[1, "tau_1"])/(n_1[i]*out[i, "tau_1"] + tau_mu1))*sum(x[which(z[i, ] == 1)]),
+                                sd = sqrt(n_1[i]*out[1, "tau_1"] + tau_mu1))
+        out[i, "mu_2"] <- rnorm(1,
+                                mean = ((out[i, "tau_2"])/(n_2[i]*out[i, "tau_2"] + tau_mu2))*sum(x[which(z[i, ] == 0)]),
+                                sd = sqrt(n_2[i]*out[1, "tau_2"] + tau_mu2))
+        out[i, "tau_1"] <- rgamma(1,
+                                  shape = hyper["a"] + .5*n_1[i],
+                                  scale = hyper["b"] + .5*sum((x[which(z[i, ] == 1)] - out[i, "mu_1"])^2))
+        out[i, "tau_2"] <- rgamma(1,
+                                  shape = hyper["a"] + .5*n_2[i],
+                                  scale = hyper["b"] + .5*sum((x[which(z[i, ] == 0)] - out[i, "mu_2"])^2))
+    }
+
+    return(out)
+}
+
+
+aa <- mymcmc(niter = 500, init = init, x = x, width = .3, hyper = hyper, burn = 5)
+```
