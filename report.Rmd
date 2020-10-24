@@ -325,10 +325,12 @@ ggplot(mapping = aes(x = x_f$sim_var)) +
   
 ## Problem 6.3.1
 
-Below is my code for the problem..
-I couldn't figure it out on time.
+Below is my code for the problem..  I couldn't figure it out on time.  I tried
+to make a Gibbs Sampling with a Metropolis step to sample from $\delta$. But,
+apparently, my calculations were wrong and the time that I could spend in this 
+problem was not enough.
 
-```{R code, eval = FALSE, echo = TRUE}
+```{R code, eval = TRUE, echo = TRUE}
 delta <- 0.7 # true value to be estimated based on the data
 n <- 100
 set.seed(123)
@@ -424,9 +426,21 @@ mymcmc <- function(niter, init, x, width,
                                   scale = hyper["b"] + .5*sum((x[which(z[i, ] == 0)] - out[i, "mu_2"])^2))
     }
 
-    return(out)
+    return(out[(burn + 1):niter, ])
 }
 
 
-aa <- mymcmc(niter = 500, init = init, x = x, width = .3, hyper = hyper, burn = 5)
+results <- mymcmc(niter = 5000, init = init, x = x, width = .3, hyper = hyper, burn = 1000)
+```
+### Histograms
+
+```{R hists}
+apply(results, 2, hist)
+```
+
+### trace plots
+
+
+```{R traces}
+apply(results, 2, ts.plot)
 ```
